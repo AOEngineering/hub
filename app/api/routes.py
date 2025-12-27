@@ -41,6 +41,9 @@ async def upload_form() -> str:
                 </button>
               </form>
               <div id="status" class="mt-4 text-sm text-slate-300"></div>
+              <div class="mt-3 h-2 w-full rounded-full bg-slate-800">
+                <div id="progress-bar" class="h-2 w-0 rounded-full bg-emerald-400 transition-all"></div>
+              </div>
             </div>
             <div class="bg-slate-900 rounded-xl p-6 shadow-lg">
               <div class="text-sm font-semibold text-slate-300 mb-2">Preview</div>
@@ -61,9 +64,14 @@ async def upload_form() -> str:
           const output = document.getElementById('output');
           const preview = document.getElementById('preview');
           const previewPlaceholder = document.getElementById('preview-placeholder');
+          const progressBar = document.getElementById('progress-bar');
 
           function setStatus(text) {
             status.textContent = text;
+          }
+
+          function setProgress(percent) {
+            progressBar.style.width = `${percent}%`;
           }
 
           function showPreview(file) {
@@ -78,17 +86,47 @@ async def upload_form() -> str:
               const response = await fetch(`/jobs/${jobId}`);
               if (!response.ok) {
                 setStatus('Failed to fetch job status');
+                setProgress(0);
                 return;
               }
               const data = await response.json();
               output.textContent = JSON.stringify(data, null, 2);
               if (['done', 'failed'].includes(data.status)) {
                 setStatus(`Job ${data.status}`);
+                setProgress(data.status === 'done' ? 100 : 100);
                 return;
+              }
+              if (data.status === 'queued') {
+                setProgress(30);
+              } else if (data.status === 'processing') {
+                setProgress(70);
               }
               setStatus(`Job ${data.status}...`);
               await new Promise(resolve => setTimeout(resolve, 1500));
             }
+          }
+
+          async function uploadFile(file) {
+            showPreview(file);
+            setStatus('Uploading...');
+            setProgress(10);
+            const formData = new FormData();
+            formData.append('file', file);
+            const response = await fetch('/ingest/image', {
+              method: 'POST',
+              body: formData
+            });
+            if (!response.ok) {
+              setStatus('Upload failed.');
+              output.textContent = await response.text();
+              setProgress(0);
+              return;
+            }
+            const data = await response.json();
+            output.textContent = JSON.stringify(data, null, 2);
+            setStatus('Queued. Polling for status...');
+            setProgress(30);
+            await pollJob(data.job.id);
           }
 
           form.addEventListener('submit', async (event) => {
@@ -98,23 +136,14 @@ async def upload_form() -> str:
               setStatus('Select a file first.');
               return;
             }
-            showPreview(fileInput.files[0]);
-            setStatus('Uploading...');
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            const response = await fetch('/ingest/image', {
-              method: 'POST',
-              body: formData
-            });
-            if (!response.ok) {
-              setStatus('Upload failed.');
-              output.textContent = await response.text();
-              return;
+            await uploadFile(fileInput.files[0]);
+          });
+
+          document.getElementById('file').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+              await uploadFile(file);
             }
-            const data = await response.json();
-            output.textContent = JSON.stringify(data, null, 2);
-            setStatus('Queued. Polling for status...');
-            await pollJob(data.job.id);
           });
         </script>
       </body>

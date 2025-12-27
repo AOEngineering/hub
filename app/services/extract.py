@@ -25,6 +25,7 @@ class ExtractedFields:
     salt_product: str | None = None
     salt_amount: str | None = None
     salt_unit: str | None = None
+    salt_info: Dict[str, Any] | None = None
 
 
 FIELD_PATTERNS = {
@@ -118,6 +119,7 @@ def _extract_fields_from_text(text: str) -> ExtractedFields:
     fields.time_open = _extract_time_value(lines, "time_open")
     fields.time_closed = _extract_time_value(lines, "time_closed")
     _populate_salt_info(fields, lines)
+    fields.salt_info = _extract_salt_info(lines)
     _fallback_site_name(fields, lines)
 
     return fields
@@ -285,6 +287,48 @@ def _find_street_line(line: str) -> str | None:
     if match:
         return match.group(0).strip()
     return None
+
+
+def _extract_salt_info(lines: list[str]) -> Dict[str, Any]:
+    info: Dict[str, Any] = {
+        "eco2_scoops": None,
+        "reliable_blue_bags": None,
+        "sidewalk_salt_type": None,
+        "sidewalk_salt_amount": None,
+        "sidewalk_salt_unit": None,
+        "salt_note": None,
+    }
+    normalized_lines = [line.lower() for line in lines]
+    for index, (line, lower_line) in enumerate(zip(lines, normalized_lines)):
+        if "eco2" in lower_line:
+            match = re.search(r"(\d+(?:\.\d+)?)\s*(scoops)?", line, re.I)
+            if match and (match.group(2) or "scoop" in lower_line):
+                info["eco2_scoops"] = match.group(1)
+            else:
+                for next_line in lines[index + 1 : index + 3]:
+                    follow_match = re.search(
+                        r"(\d+(?:\.\d+)?)\s*(scoops|#\s*scoops)?", next_line, re.I
+                    )
+                    if follow_match:
+                        info["eco2_scoops"] = follow_match.group(1)
+                        break
+        if "reliable blue" in lower_line:
+            match = re.search(r"(\d+(?:\.\d+)?)\s*(bags)?", line, re.I)
+            if match:
+                info["reliable_blue_bags"] = match.group(1)
+        if "sidewalk info" in lower_line:
+            info["sidewalk_salt_type"] = "reliable blue"
+        if lower_line.startswith("salt"):
+            if "none" in lower_line:
+                info["salt_note"] = "none"
+            else:
+                info["salt_note"] = line.replace("Salt", "").strip()
+
+    if info["sidewalk_salt_type"] and info["reliable_blue_bags"]:
+        info["sidewalk_salt_amount"] = info["reliable_blue_bags"]
+        info["sidewalk_salt_unit"] = "bags"
+
+    return info
 
 
 def _extract_gps_from_image(image: "Image.Image") -> tuple[float | None, float | None]:
