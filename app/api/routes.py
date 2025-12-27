@@ -20,28 +20,57 @@ async def upload_form() -> str:
     <html>
       <head>
         <title>Lantern Upload</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 2rem; }
-          #status { margin-top: 1rem; }
-          pre { background: #f5f5f5; padding: 1rem; }
-        </style>
+        <script src="https://cdn.tailwindcss.com"></script>
       </head>
-      <body>
-        <h1>Lantern Ingest</h1>
-        <form id="upload-form">
-          <label for="file">Route sheet image:</label>
-          <input type="file" id="file" name="file" accept="image/*" required />
-          <button type="submit">Upload</button>
-        </form>
-        <div id="status"></div>
-        <pre id="output"></pre>
+      <body class="bg-slate-950 text-slate-100 min-h-screen">
+        <div class="max-w-5xl mx-auto px-6 py-10">
+          <h1 class="text-3xl font-semibold mb-6">Lantern Ingest</h1>
+          <div class="grid gap-6 md:grid-cols-2">
+            <div class="bg-slate-900 rounded-xl p-6 shadow-lg">
+              <form id="upload-form" class="space-y-4">
+                <div>
+                  <label for="file" class="block text-sm font-medium text-slate-300">
+                    Route sheet image
+                  </label>
+                  <input type="file" id="file" name="file" accept="image/*" required
+                    class="mt-2 block w-full text-sm text-slate-200 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-500 file:text-white hover:file:bg-indigo-400" />
+                </div>
+                <button type="submit"
+                  class="inline-flex items-center justify-center rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400">
+                  Upload
+                </button>
+              </form>
+              <div id="status" class="mt-4 text-sm text-slate-300"></div>
+            </div>
+            <div class="bg-slate-900 rounded-xl p-6 shadow-lg">
+              <div class="text-sm font-semibold text-slate-300 mb-2">Preview</div>
+              <div class="aspect-video bg-slate-800 rounded-lg flex items-center justify-center overflow-hidden">
+                <img id="preview" src="" alt="Preview" class="hidden w-full h-full object-contain" />
+                <span id="preview-placeholder" class="text-slate-500 text-sm">No image uploaded yet</span>
+              </div>
+            </div>
+          </div>
+          <div class="mt-6 bg-slate-900 rounded-xl p-6 shadow-lg">
+            <div class="text-sm font-semibold text-slate-300 mb-2">Extraction output</div>
+            <pre id="output" class="text-xs text-slate-100 whitespace-pre-wrap"></pre>
+          </div>
+        </div>
         <script>
           const form = document.getElementById('upload-form');
           const status = document.getElementById('status');
           const output = document.getElementById('output');
+          const preview = document.getElementById('preview');
+          const previewPlaceholder = document.getElementById('preview-placeholder');
 
           function setStatus(text) {
             status.textContent = text;
+          }
+
+          function showPreview(file) {
+            const url = URL.createObjectURL(file);
+            preview.src = url;
+            preview.classList.remove('hidden');
+            previewPlaceholder.classList.add('hidden');
           }
 
           async function pollJob(jobId) {
@@ -69,6 +98,7 @@ async def upload_form() -> str:
               setStatus('Select a file first.');
               return;
             }
+            showPreview(fileInput.files[0]);
             setStatus('Uploading...');
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);

@@ -16,10 +16,15 @@ class ExtractedFields:
     address: str | None = None
     city: str | None = None
     postal_code: str | None = None
+    gps_latitude: float | None = None
+    gps_longitude: float | None = None
     service_days: str | None = None
     time_open: str | None = None
     time_closed: str | None = None
     notes: str | None = None
+    salt_product: str | None = None
+    salt_amount: str | None = None
+    salt_unit: str | None = None
 
 
 FIELD_PATTERNS = {
@@ -56,7 +61,7 @@ def extract_fields(job_record: Dict[str, Any]) -> Dict[str, Any]:
         update_job_status(job_id, "queued", extraction=payload, error=message)
         return payload
 
-    from PIL import Image
+    from PIL import Image, ImageOps
     import pytesseract
     from pytesseract import TesseractNotFoundError
 
@@ -75,12 +80,16 @@ def extract_fields(job_record: Dict[str, Any]) -> Dict[str, Any]:
             update_job_status(job_id, "queued", extraction=payload, error=message)
             return payload
         image = Image.open(Path(image_path))
+        image = ImageOps.exif_transpose(image)
         extracted_text = pytesseract.image_to_string(image)
     except Exception as exc:
         update_job_status(job_id, "failed", error=str(exc))
         return {"status": "failed", "job_id": job_id, "error": str(exc)}
 
     fields = _extract_fields_from_text(extracted_text)
+    gps_latitude, gps_longitude = _extract_gps_from_image(image)
+    fields.gps_latitude = gps_latitude
+    fields.gps_longitude = gps_longitude
     payload = {
         "status": "done",
         "job_id": job_id,
@@ -98,7 +107,7 @@ def _extract_fields_from_text(text: str) -> ExtractedFields:
     address, city, postal_code = _extract_address_block(lines)
     fields.address = address
     fields.city = city
-    fields.postal_code = postal_code
+    fields.postal_code = _normalize_postal_code(postal_code)
 
     for key in ("route", "site_name", "notes"):
         value = _extract_field_from_lines(lines, key)
@@ -108,9 +117,7 @@ def _extract_fields_from_text(text: str) -> ExtractedFields:
     fields.service_days = _extract_service_days(lines)
     fields.time_open = _extract_field_from_lines(lines, "time_open")
     fields.time_closed = _extract_field_from_lines(lines, "time_closed")
-
-    if fields.postal_code:
-        fields.postal_code = fields.postal_code.replace(" ", "").upper()
+    _populate_salt_info(fields, lines)
 
     return fields
 
@@ -181,6 +188,74 @@ def _extract_service_days(lines: list[str]) -> str | None:
                         return f"{match.group(1)}-{match.group(2)}".title()
                     return match.group(1).title()
     return None
+
+
+def _normalize_postal_code(value: str | None) -> str | None:
+    if not value:
+        return None
+    digits = re.sub(r"\\D", "", value)
+    return digits[-5:] or None
+
+
+def _populate_salt_info(fields: ExtractedFields, lines: list[str]) -> None:
+    joined = " ".join(lines)
+    salt_line = None
+    salt_index = None
+    for index, line in enumerate(lines):
+        if "salt info" in line.lower() or "sidewalk info" in line.lower():
+            salt_line = line
+            salt_index = index
+            break
+    candidate = salt_line or joined
+    match = re.search(
+        r"(salt|eco2|reliable blue)\s*(\d+(?:\.\d+)?)?\s*(bags|scoops)?",
+        candidate,
+        re.I,
+    )
+    if match:
+        fields.salt_product = match.group(1)
+        fields.salt_amount = match.group(2)
+        fields.salt_unit = match.group(3)
+        if fields.salt_amount or fields.salt_unit:
+            return
+
+    if salt_index is not None:
+        for line in lines[salt_index + 1 : salt_index + 4]:
+            quantity = re.search(r"(\d+(?:\.\d+)?)\s*(bags|scoops)?", line, re.I)
+            if quantity:
+                fields.salt_amount = fields.salt_amount or quantity.group(1)
+                fields.salt_unit = fields.salt_unit or quantity.group(2)
+                break
+
+
+def _extract_gps_from_image(image: "Image.Image") -> tuple[float | None, float | None]:
+    exif = image.getexif()
+    if not exif:
+        return None, None
+    gps_info = exif.get(34853)
+    if not gps_info:
+        return None, None
+
+    def _convert(value):
+        try:
+            return float(value[0]) / float(value[1])
+        except Exception:
+            return None
+
+    lat_values = gps_info.get(2)
+    lat_ref = gps_info.get(1)
+    lon_values = gps_info.get(4)
+    lon_ref = gps_info.get(3)
+    if not lat_values or not lon_values:
+        return None, None
+
+    lat = sum(_convert(lat_values[i]) / (60 ** i) for i in range(len(lat_values)))
+    lon = sum(_convert(lon_values[i]) / (60 ** i) for i in range(len(lon_values)))
+    if lat_ref in ("S", "s"):
+        lat = -lat
+    if lon_ref in ("W", "w"):
+        lon = -lon
+    return lat, lon
 
 
 def _collect_block_lines(
