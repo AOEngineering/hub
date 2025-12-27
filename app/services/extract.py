@@ -115,9 +115,10 @@ def _extract_fields_from_text(text: str) -> ExtractedFields:
             setattr(fields, key, value)
 
     fields.service_days = _extract_service_days(lines)
-    fields.time_open = _extract_field_from_lines(lines, "time_open")
-    fields.time_closed = _extract_field_from_lines(lines, "time_closed")
+    fields.time_open = _extract_time_value(lines, "time_open")
+    fields.time_closed = _extract_time_value(lines, "time_closed")
     _populate_salt_info(fields, lines)
+    _fallback_site_name(fields, lines)
 
     return fields
 
@@ -169,6 +170,18 @@ def _extract_address_block(
                 if postal_match:
                     postal_code = f"{postal_match.group(1)} {postal_match.group(2)}"
             break
+        if not address:
+            address_match = _find_street_line(line)
+            if address_match:
+                address = address_match
+                if index + 1 < len(lines):
+                    city = lines[index + 1]
+                if index + 2 < len(lines):
+                    postal_line = lines[index + 2]
+                    postal_match = re.search(r"([A-Z]{2})\s+(\d{5})", postal_line)
+                    if postal_match:
+                        postal_code = f"{postal_match.group(1)} {postal_match.group(2)}"
+                break
 
     return address, city, postal_code
 
@@ -188,6 +201,30 @@ def _extract_service_days(lines: list[str]) -> str | None:
                         return f"{match.group(1)}-{match.group(2)}".title()
                     return match.group(1).title()
     return None
+
+
+def _extract_time_value(lines: list[str], key: str) -> str | None:
+    pattern = FIELD_PATTERNS[key]
+    for index, line in enumerate(lines):
+        match = pattern.search(line)
+        if match:
+            value = match.group(1).strip()
+            if value:
+                return _normalize_time_value(value)
+            if index + 1 < len(lines):
+                return _normalize_time_value(lines[index + 1])
+    return None
+
+
+def _normalize_time_value(value: str) -> str | None:
+    cleaned = value.replace("|", " ").replace("l", "1")
+    match = re.search(r"(\d{1,2}:\d{2}\s*[APap][Mm])", cleaned)
+    if match:
+        return match.group(1).upper().replace(" ", "")
+    match = re.search(r"(\d{1,2})\s*([APap][Mm])", cleaned)
+    if match:
+        return f"{match.group(1)} {match.group(2).upper()}"
+    return cleaned.strip() or None
 
 
 def _normalize_postal_code(value: str | None) -> str | None:
@@ -226,6 +263,28 @@ def _populate_salt_info(fields: ExtractedFields, lines: list[str]) -> None:
                 fields.salt_amount = fields.salt_amount or quantity.group(1)
                 fields.salt_unit = fields.salt_unit or quantity.group(2)
                 break
+
+
+def _fallback_site_name(fields: ExtractedFields, lines: list[str]) -> None:
+    if fields.site_name:
+        return
+    for line in lines[:5]:
+        if _find_street_line(line):
+            break
+        if len(line.split()) >= 2:
+            fields.site_name = line
+            return
+
+
+def _find_street_line(line: str) -> str | None:
+    match = re.search(
+        r"\d{2,5}\s+.+\b(rd|road|st|street|ave|avenue|blvd|boulevard|dr|drive|ln|lane|ct|court)\b\.?,?",
+        line,
+        re.I,
+    )
+    if match:
+        return match.group(0).strip()
+    return None
 
 
 def _extract_gps_from_image(image: "Image.Image") -> tuple[float | None, float | None]:
