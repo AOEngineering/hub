@@ -82,7 +82,7 @@ def extract_fields(job_record: Dict[str, Any]) -> Dict[str, Any]:
             return payload
         image = Image.open(Path(image_path))
         image = ImageOps.exif_transpose(image)
-        extracted_text = pytesseract.image_to_string(image)
+        extracted_text = _run_ocr_with_orientation(image, pytesseract)
     except Exception as exc:
         update_job_status(job_id, "failed", error=str(exc))
         return {"status": "failed", "job_id": job_id, "error": str(exc)}
@@ -123,6 +123,36 @@ def _extract_fields_from_text(text: str) -> ExtractedFields:
     _fallback_site_name(fields, lines)
 
     return fields
+
+
+def _run_ocr_with_orientation(image: "Image.Image", pytesseract_module) -> str:
+    candidates: list[str] = []
+    for angle in (0, 90, 180, 270):
+        rotated = image.rotate(angle, expand=True) if angle else image
+        try:
+            candidates.append(pytesseract_module.image_to_string(rotated))
+        except Exception:
+            continue
+    if not candidates:
+        raise RuntimeError("OCR failed for all orientations")
+    return max(candidates, key=_score_text)
+
+
+def _score_text(text: str) -> int:
+    score = 0
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    for key in ("route", "site_name", "address", "city", "postal_code"):
+        if _extract_field_from_lines(lines, key):
+            score += 2
+    if _extract_service_days(lines):
+        score += 1
+    if _extract_time_value(lines, "time_open"):
+        score += 1
+    if _extract_time_value(lines, "time_closed"):
+        score += 1
+    if _extract_salt_info(lines).get("eco2_scoops"):
+        score += 1
+    return score
 
 
 def _extract_field_from_lines(lines: list[str], key: str) -> str | None:
