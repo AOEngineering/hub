@@ -12,10 +12,6 @@ INBOX_RAW_DIR = DATA_DIR / "inbox_raw"
 INBOX_JOBS_DIR = DATA_DIR / "inbox_jobs"
 
 
-def _job_path(job_id: str) -> Path:
-    return INBOX_JOBS_DIR / f"{job_id}.json"
-
-
 def _ensure_dirs() -> None:
     INBOX_RAW_DIR.mkdir(parents=True, exist_ok=True)
     INBOX_JOBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -42,27 +38,7 @@ def save_ingest_event(
         "image_path": str(image_path),
         "status": "queued",
     }
-    _job_path(job_id).write_text(json.dumps(job_record, indent=2), encoding="utf-8")
+    job_path = INBOX_JOBS_DIR / f"{job_id}.json"
+    job_path.write_text(json.dumps(job_record, indent=2), encoding="utf-8")
 
     return job_record
-
-
-def update_job_status(
-    job_id: str,
-    status: str,
-    *,
-    error: str | None = None,
-    extraction: Dict[str, Any] | None = None,
-) -> None:
-    _ensure_dirs()
-    job_path = _job_path(job_id)
-    if not job_path.exists():
-        return
-
-    job_record = json.loads(job_path.read_text(encoding="utf-8"))
-    job_record["status"] = status
-    if error:
-        job_record["error"] = error
-    if extraction:
-        job_record["extraction"] = extraction
-    job_path.write_text(json.dumps(job_record, indent=2), encoding="utf-8")

@@ -3,5 +3,3 @@ uvicorn
 pydantic-settings
 python-multipart
 requests
-pillow
-pytesseract
