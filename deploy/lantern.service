@@ -1,0 +1,12 @@
+[Unit]
+Description=Lantern FastAPI Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/aoe_lantern
+ExecStart=/root/aoe_lantern/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8099
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
