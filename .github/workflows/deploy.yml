@@ -1,0 +1,12 @@
+name: Deploy Lantern
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "Add Appleboy SSH deploy steps"
