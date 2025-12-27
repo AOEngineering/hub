@@ -2,6 +2,7 @@ import base64
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.services.deliver import deliver_to_routebinder
@@ -9,6 +10,23 @@ from app.services.extract import extract_fields
 from app.services.ingest import save_ingest_event
 
 router = APIRouter()
+
+
+@router.get("/", response_class=HTMLResponse)
+async def upload_form() -> str:
+    return """
+    <html>
+      <head><title>Lantern Upload</title></head>
+      <body>
+        <h1>Lantern Ingest</h1>
+        <form action="/ingest/image" method="post" enctype="multipart/form-data">
+          <label for="file">Route sheet image:</label>
+          <input type="file" id="file" name="file" accept="image/*" required />
+          <button type="submit">Upload</button>
+        </form>
+      </body>
+    </html>
+    """
 
 
 class EmailIngestPayload(BaseModel):
