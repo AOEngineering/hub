@@ -23,15 +23,15 @@ class ExtractedFields:
 
 
 FIELD_PATTERNS = {
-    "route": re.compile(r"route[:\\s]+(\\S+)", re.IGNORECASE),
-    "site_name": re.compile(r"slang name[:\\s]+(.+)", re.IGNORECASE),
-    "address": re.compile(r"address[:\\s]+(.+)", re.IGNORECASE),
-    "city": re.compile(r"city[:\\s]+(.+)", re.IGNORECASE),
-    "postal_code": re.compile(r"zip code[:\\s]+(.+)", re.IGNORECASE),
-    "service_days": re.compile(r"service days[:\\s]+(.+)", re.IGNORECASE),
-    "time_open": re.compile(r"time open[:\\s]+(.+)", re.IGNORECASE),
-    "time_closed": re.compile(r"time closed[:\\s]+(.+)", re.IGNORECASE),
-    "notes": re.compile(r"special notes[:\\s]+(.+)", re.IGNORECASE),
+    "route": re.compile(r"route[:\s]*(.*)", re.IGNORECASE),
+    "site_name": re.compile(r"slang name[:\s]*(.*)", re.IGNORECASE),
+    "address": re.compile(r"address[:\s]*(.*)", re.IGNORECASE),
+    "city": re.compile(r"city[:\s]*(.*)", re.IGNORECASE),
+    "postal_code": re.compile(r"(zip code|zip)[:\s]*(.*)", re.IGNORECASE),
+    "service_days": re.compile(r"service days[:\s]*(.*)", re.IGNORECASE),
+    "time_open": re.compile(r"time open[:\s]*(.*)", re.IGNORECASE),
+    "time_closed": re.compile(r"time closed[:\s]*(.*)", re.IGNORECASE),
+    "notes": re.compile(r"special notes[:\s]*(.*)", re.IGNORECASE),
 }
 
 
@@ -93,12 +93,105 @@ def extract_fields(job_record: Dict[str, Any]) -> Dict[str, Any]:
 
 def _extract_fields_from_text(text: str) -> ExtractedFields:
     fields = ExtractedFields()
-    normalized = " ".join(text.split())
-    for key, pattern in FIELD_PATTERNS.items():
-        match = pattern.search(normalized)
-        if match:
-            setattr(fields, key, match.group(1).strip())
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    address, city, postal_code = _extract_address_block(lines)
+    fields.address = address
+    fields.city = city
+    fields.postal_code = postal_code
+
+    for key in ("route", "site_name", "notes"):
+        value = _extract_field_from_lines(lines, key)
+        if value:
+            setattr(fields, key, value)
+
+    fields.service_days = _extract_service_days(lines)
+    fields.time_open = _extract_field_from_lines(lines, "time_open")
+    fields.time_closed = _extract_field_from_lines(lines, "time_closed")
+
+    if fields.postal_code:
+        fields.postal_code = fields.postal_code.replace(" ", "").upper()
+
     return fields
+
+
+def _extract_field_from_lines(lines: list[str], key: str) -> str | None:
+    pattern = FIELD_PATTERNS[key]
+    for index, line in enumerate(lines):
+        match = pattern.search(line)
+        if match:
+            if key == "postal_code":
+                value = match.group(2)
+            else:
+                value = match.group(1)
+            if value.strip():
+                return value.strip()
+            return _collect_following_lines(lines, index + 1, stop_keys=FIELD_PATTERNS)
+    return None
+
+
+def _collect_following_lines(
+    lines: list[str], start_index: int, *, stop_keys: dict[str, re.Pattern]
+) -> str | None:
+    collected: list[str] = []
+    for line in lines[start_index:]:
+        if any(pattern.search(line) for pattern in stop_keys.values()):
+            break
+        collected.append(line)
+    value = " ".join(collected).strip()
+    return value or None
+
+
+def _extract_address_block(
+    lines: list[str],
+) -> tuple[str | None, str | None, str | None]:
+    address = None
+    city = None
+    postal_code = None
+
+    for index, line in enumerate(lines):
+        if FIELD_PATTERNS["address"].search(line):
+            block = _collect_block_lines(lines, index + 1, stop_keys=FIELD_PATTERNS)
+            if block:
+                address = block[0]
+            if len(block) > 1:
+                city = block[1]
+            if len(block) > 2:
+                postal_line = block[2]
+                postal_match = re.search(r"([A-Z]{2})\s+(\d{5})", postal_line)
+                if postal_match:
+                    postal_code = f"{postal_match.group(1)} {postal_match.group(2)}"
+            break
+
+    return address, city, postal_code
+
+
+def _extract_service_days(lines: list[str]) -> str | None:
+    for index, line in enumerate(lines):
+        if FIELD_PATTERNS["service_days"].search(line):
+            if index + 1 < len(lines):
+                candidate = lines[index + 1]
+                match = re.search(
+                    r"(mon|tue|wed|thu|fri|sat|sun)(?:\s*-\s*(mon|tue|wed|thu|fri|sat|sun))?",
+                    candidate,
+                    re.I,
+                )
+                if match:
+                    if match.group(2):
+                        return f"{match.group(1)}-{match.group(2)}".title()
+                    return match.group(1).title()
+    return None
+
+
+def _collect_block_lines(
+    lines: list[str], start_index: int, *, stop_keys: dict[str, re.Pattern]
+) -> list[str]:
+    collected: list[str] = []
+    for line in lines[start_index:]:
+        if any(pattern.search(line) for pattern in stop_keys.values()):
+            break
+        collected.append(line)
+    return collected
 
 
 def _missing_dependencies() -> list[str]:
