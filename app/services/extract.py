@@ -45,9 +45,16 @@ def extract_fields(job_record: Dict[str, Any]) -> Dict[str, Any]:
 
     missing_deps = _missing_dependencies()
     if missing_deps:
-        error = f"Missing dependencies: {', '.join(missing_deps)}"
-        update_job_status(job_id, "failed", error=error)
-        return {"status": "failed", "job_id": job_id, "error": error}
+        message = f"OCR unavailable; missing dependencies: {', '.join(missing_deps)}"
+        payload = {
+            "status": "queued",
+            "job_id": job_id,
+            "fields": ExtractedFields().__dict__,
+            "ocr_status": "unavailable",
+            "message": message,
+        }
+        update_job_status(job_id, "queued", extraction=payload, error=message)
+        return payload
 
     from PIL import Image
     import pytesseract
@@ -57,8 +64,16 @@ def extract_fields(job_record: Dict[str, Any]) -> Dict[str, Any]:
         try:
             pytesseract.get_tesseract_version()
         except TesseractNotFoundError as exc:
-            update_job_status(job_id, "failed", error=str(exc))
-            return {"status": "failed", "job_id": job_id, "error": str(exc)}
+            message = str(exc)
+            payload = {
+                "status": "queued",
+                "job_id": job_id,
+                "fields": ExtractedFields().__dict__,
+                "ocr_status": "unavailable",
+                "message": message,
+            }
+            update_job_status(job_id, "queued", extraction=payload, error=message)
+            return payload
         image = Image.open(Path(image_path))
         extracted_text = pytesseract.image_to_string(image)
     except Exception as exc:
