@@ -1,0 +1,9 @@
+{
+  "id": "5e2b98b972c74814a5b913902cdb3a7e",
+  "received_at": "2025-12-27T04:24:47.770370+00:00",
+  "source": "upload",
+  "metadata": {},
+  "image_path": "C:\\AOEngineering\\RouteBinder\\hub\\data\\inbox_raw\\5e2b98b972c74814a5b913902cdb3a7e_beckett-gas.jpg",
+  "status": "failed",
+  "error": "Missing dependencies: pillow, pytesseract"
+}
