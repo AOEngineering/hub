@@ -1,0 +1,9 @@
+{
+  "id": "3fed14e0dca042bbbc6aa7c7f50cf0c3",
+  "received_at": "2025-12-27T04:28:58.652156+00:00",
+  "source": "upload",
+  "metadata": {},
+  "image_path": "C:\\AOEngineering\\RouteBinder\\hub\\data\\inbox_raw\\3fed14e0dca042bbbc6aa7c7f50cf0c3_beckett-gas.jpg",
+  "status": "failed",
+  "error": "tesseract is not installed or it's not in your PATH. See README file for more information."
+}
